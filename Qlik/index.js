@@ -14,68 +14,75 @@ const socketArguments = `apiId=${config.apiId}&apiSecret=${config.apiSecret}`
 let playerId
 let socket = io.connect(`http://${config.host}:${config.socketPort}`, { query: socketArguments})
 
-socket.on('connect', function(data) {
-  console.log('connected')
-})
-
-socket.on('invalid', (error) => {
-  console.log('error', error)
-})
-
-socket.on('success', (data) => {
-  playerId = data.id
+socket.on('success', (player) => {
+  playerId = player.id
+  console.log('logged in')
 })
 
 socket.on('start game', (game) => {
+  readlineInterface.write('game started ')
+  // if the current player is us, we want to play
+  getGame(game.id)
+      .then((game) => {
+        if (game.current === playerId) {
+          performMove()
+        }
+      })
+      .catch((error) => {
+        console.log("Error retrieving game on 'start game'", error)
+      })
+})
+
+socket.on('in game', (game) => {
+  console.log('already in game')
 
   getGame(game.id)
-  .then((gameData) => {
-    if(gameData.current === playerId) {
-      console.log("our turn")
-    }
-  })
+      .then((game) => {
+        if (game.current === playerId) {
+          console.log('your turn')
+        }
+      })
+      .catch((error) => {
+        console.log("Error retrieving game on 'in game'", error)
+      })
 })
 
 socket.on('move played', (move) => {
-  // someone has played a move in our game
-  // if the move just played wasn't by us, it is now
-  // our turn to play.
-
-  if (move.player != playerId) {
-    console.log(`opponent performed ${move.result}`)
-    performMove()
-  }
+  // if the move just played wasn't by us, we want to
+  // make a move
+  getMove(move.id)
+      .then((move) => {
+        readlineInterface.write('.')
+        if (move.player != playerId) {
+          performMove()
+        }
+      })
+      .catch((error) => {
+        console.log("Error retrieving Move on 'move played'", error)
+      })
 })
 
-let performMove = () => {
+socket.on('invalid', (error) => {
+  console.log("Invalid Action", error)
+})
 
-  // this is where we would put our logic for deciding which move to make
-  // here we are just attacking all the time. We should probably be more
-  // creative than this. If we don't heal our Qritter will most likely be
-  // defeated in no time.
+socket.on('game over', (game) => {
+  readlineInterface.write('\n')
+  console.log("Game Over")
+  getGameStats(game.game.id, playerId)
+})
 
-  let body = {action: "attack"}
-  let options = createOptions("moves", "POST", body)
-
-  request.post(options, (error, res, body) => {
-    if (error || res.statusCode !== 200) {
-      console.log("Error Performing Move", error || res.body)
-    } else {
-      console.log(`attack performed successfully`)
-    }
-  })
-}
+socket.on('connect', (data) => {
+  console.log('connected')
+})
 
 let getGame = (gameId) => {
   return new Promise((resolve, reject) => {
-
-    // we want to perform a GET request to the games/:id API
-    // to retrieve information about the given game
     let options = createOptions(`games/${gameId}`, "GET")
 
     request.get(options, (error, res, body) => {
-      if (error || res.statusCode !== 200) {
-        console.error("Error Getting Game", error || res.body)
+      if (error) {
+        console.error("Error Getting Game", error)
         reject(error)
       } else {
         resolve(JSON.parse(body))
@@ -84,11 +91,54 @@ let getGame = (gameId) => {
   })
 }
 
+let getGameMoves = (gameId) => {
+  return new Promise((resolve, reject) => {
+    let options = createOptions(`games/${gameId}/moves`, "GET")
+
+    request.get(options, (error, res, body) => {
+      if (error || res.statusCode !== 200) {
+        console.error("Error Getting Game Moves", error || res.body)
+        reject(error)
+      } else {
+        resolve(JSON.parse(body))
+      }
+    })
+  })
+}
+
+let getMove = (moveId) => {
+  return new Promise((resolve, reject) => {
+    let options = createOptions(`moves/${moveId}`, "GET")
+
+    request.get(options, (error, res, body) => {
+      if (error) {
+        console.error("Error Getting Move", error)
+        reject(error)
+      } else {
+        resolve(JSON.parse(body))
+      }
+    })
+  })
+}
+
+let performMove = () => {
+
+  // this is where we would put our logic for deciding which move to make
+  // here we are just doing the opposite of what we did last
+
+  lastMove = lastMove === "attack" ? "heal" : "attack"
+  var body = {action: lastMove}
+
+  let options = createOptions("moves", "POST", JSON.stringify(body))
+
+  request.post(options, (error, res, body) => {
+    if (error || res.statusCode != 200) {
+      readlineInterface.write('!')
+    }
+  })
+}
+
 let createOptions = (endpoint, method, body) => {
-  // we need to return all options that the request module expects
-  // for an http request. 'uri' is the location of the request, 'method'
-  // is what http method we want to use (most likely GET or POST). headers
-  // are the http headers we want attached to our request
   let options = {
     uri: `http://${config.host}:${config.apiPort}/${endpoint}`,
     method: method.toUpperCase(),
@@ -99,9 +149,51 @@ let createOptions = (endpoint, method, body) => {
   }
 
   if (body != null) {
-    // if a body has been specified we want to add it to the http request
-    options.body = JSON.stringify(body)
+    options.body = body
   }
 
   return options
+}
+
+let getGameStats = (gameId, playerId) => {
+  getGame(gameId)
+      .then((game) => {
+        if (game.winner === playerId) {
+          console.log("You Won!!!")
+        } else {
+          console.log("You Lost :(")
+        }
+        return getGameMoves(gameId)
+      })
+      .then((moves) => {
+        console.log("Total Moves:", moves.length)
+        console.log("Me")
+        console.log("==")
+        printStatistics(moves.filter((move) => move.player === playerId))
+
+        console.log("Opponent")
+        console.log("========")
+        printStatistics(moves.filter((move) => move.player !== playerId))
+      })
+      .catch((error) => {
+        console.log("Issue Retrieving Game Stats", error)
+      })
+}
+
+let printStatistics = (moves) => {
+  let attacks = moves.filter((move) => move.action === "attack").map((move) => {
+    return {value: move.value, result: move.result}
+  })
+  let attackValue = attacks.reduce((total, move) => total + move.value, 0)
+  let heals = moves.filter((move) => move.action === "heal").map((move) => move.value)
+  let healValue = heals.reduce((total, value) => total + value, 0)
+  console.log("Attacks:", attacks.length)
+  console.log("Total Attack Value:", attackValue)
+  console.log("Total Attack Avg:", parseInt(attackValue / attacks.length))
+  console.log("Total Hits", attacks.filter((move) => move.result === "hit").length)
+  console.log("Total Critical Hits", attacks.filter((move) => move.result === "critical").length)
+  console.log("Total Misses", attacks.filter((move) => move.result === "miss").length)
+  console.log("Heals:", heals.length)
+  console.log("Total Heal Value:", healValue)
+  console.log("Total Heal Avg:", parseInt(healValue / heals.length))
 }
