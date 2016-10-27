@@ -36,6 +36,17 @@ socket.on('start game', (game) => {
   })
 })
 
+socket.on('move played', (move) => {
+  // someone has played a move in our game
+  // if the move just played wasn't by us, it is now
+  // our turn to play.
+
+  if (move.player != playerId) {
+    console.log(`opponent performed ${move.result}`)
+    performMove()
+  }
+})
+
 let performMove = () => {
 
   // this is where we would put our logic for deciding which move to make
