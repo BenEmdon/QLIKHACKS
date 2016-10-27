@@ -36,6 +36,25 @@ socket.on('start game', (game) => {
   })
 })
 
+let performMove = () => {
+
+  // this is where we would put our logic for deciding which move to make
+  // here we are just attacking all the time. We should probably be more
+  // creative than this. If we don't heal our Qritter will most likely be
+  // defeated in no time.
+
+  let body = {action: "attack"}
+  let options = createOptions("moves", "POST", body)
+
+  request.post(options, (error, res, body) => {
+    if (error || res.statusCode !== 200) {
+      console.log("Error Performing Move", error || res.body)
+    } else {
+      console.log(`attack performed successfully`)
+    }
+  })
+}
+
 let getGame = (gameId) => {
   return new Promise((resolve, reject) => {
 
