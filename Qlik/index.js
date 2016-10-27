@@ -13,6 +13,7 @@ const apiKey = new Buffer(`${config.apiId}:${config.apiSecret}`).toString('base6
 const socketArguments = `apiId=${config.apiId}&apiSecret=${config.apiSecret}`
 
 let playerId
+let otherPlayerId
 let socket = io.connect(`http://${config.host}:${config.socketPort}`, { query: socketArguments})
 
 socket.on('connect', function(data) {
@@ -25,11 +26,12 @@ socket.on('invalid', (error) => {
 
 socket.on('success', (data) => {
   playerId = data.id
-  console.log(playerId);
+  console.log('Got player id: ' + playerId);
 })
 
 socket.on('start game', (game) => {
   counter = 0
+  otherPlayerId = game.player2 == playerId ? game.player1 : game.player2
   getGame(game.id)
   .then((gameData) => {
     if(gameData.current === playerId) {
@@ -42,8 +44,6 @@ socket.on('game over', (game) => {
   console.log("Game Over")
   getGameStats(game.game.id, playerId)
 })
-
-
 
 let getGame = (gameId) => {
   return new Promise((resolve, reject) => {
@@ -68,16 +68,36 @@ socket.on('move played', (move) => {
   // if the move just played wasn't by us, it is now
   // our turn to play.
 
-  if (move.player != playerId) {
-    console.log(`opponent performed ${move.result}`)
-    performMove()
-  }
+  getMove(move.id)
+      .then((move) => {
+        if (move.player != playerId) {
+          performMove()
+        }
+      })
+    .catch((error) => {
+      console.log("Error retrieving Move on 'move played'", error)
+  })
 })
+
+let getMove = (moveId) => {
+  return new Promise((resolve, reject) => {
+    let options = createOptions(`moves/${moveId}`, "GET")
+
+    request.get(options, (error, res, body) => {
+      if (error) {
+        console.error("Error Getting Move", error)
+        reject(error)
+      } else {
+        resolve(JSON.parse(body))
+      }
+    })
+  })
+}
 
 let performMove = () => {
 
   getHealth().then((health) => {
-    var move = health > 40 ? "attack" : "heal"
+    var move = health.playerHealth > health.otherPlayerHealth || health.playerHealth > 80 ? "attack" : "heal"
     doAMove(move)
   }).catch((err) => {
     console.log('Get health failed ¯\\_(ツ)_/¯ ');
@@ -117,12 +137,17 @@ let getHealth = () => {
         reject(error)
       } else {
         var obj = JSON.parse(body)
-        var players = obj.filter(item => item._id === playerId)
+        var players = obj.filter(item => item._id === playerId || item._id === otherPlayerId)
         if (players.length < 1) {
-          resolve(100)
+          console.log('players.length < 1');
+          resolve({playerHealth: 100, otherPlayerHealth: 0})
         } else {
-          console.log(players[0].health);
-          resolve(players[0].health)
+          var playerHealth = players.filter(item => item._id === playerId)[0]
+          var otherPlayerHealth = players.filter(item => item._id === otherPlayerId)[0]
+          console.log('player health: ' + playerHealth.health);
+          console.log('other player health: ' + otherPlayerHealth.health);
+
+          resolve({playerHealth: playerHealth.health, otherPlayerHealth: otherPlayerHealth.health})
         }
       }
     })
