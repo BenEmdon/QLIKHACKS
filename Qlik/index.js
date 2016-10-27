@@ -31,7 +31,7 @@ socket.on('success', (data) => {
 
 socket.on('start game', (game) => {
   counter = 0
-  otherPlayerId = game.player2 == playerId ? game.player1 : game.player2
+  otherPlayerId = game.player1 === playerId ? game.player2 : game.player1
   getGame(game.id)
   .then((gameData) => {
     if(gameData.current === playerId) {
@@ -100,6 +100,8 @@ let performMove = () => {
     playerHealth = health
     return getHealth(otherPlayerId).then((otherHealth) => {
       doAMove(playerHealth > otherHealth || playerHealth > 80 ? "attack" : "heal")
+    }).catch((err) => {
+      doAMove((counter + 1 )% 3 === 0 ? "attack" : "heal")
     })
   })
 
