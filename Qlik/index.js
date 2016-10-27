@@ -95,14 +95,12 @@ let getMove = (moveId) => {
 }
 
 let performMove = () => {
-
-  getHealth().then((health) => {
-    var move = health.playerHealth > health.otherPlayerHealth || health.playerHealth > 80 ? "attack" : "heal"
-    doAMove(move)
-  }).catch((err) => {
-    console.log('Get health failed ¯\\_(ツ)_/¯ ');
-    var move = (counter + 1) % 3 === 0 ? "heal" : "attack"
-    doAMove(move)
+  var playerHealth
+  getHealth(playerId).then((health) => {
+    playerHealth = health
+    return getHealth(otherPlayerId).then((otherHealth) => {
+      doAMove(playerHealth > otherHealth || playerHealth > 80 ? "attack" : "heal")
+    })
   })
 
   // this is where we would put our logic for deciding which move to make
@@ -124,35 +122,52 @@ let doAMove = (move) => {
   })
 }
 
-let getHealth = () => {
+let getHealth = (id) => {
   return new Promise((resolve, reject) => {
-
-    // we want to perform a GET request to the games/:id API
-    // to retrieve information about the given game
-    let options = createOptions(`players/active`, "GET")
+    let options = createOptions(`players/${id}`, "GET")
 
     request.get(options, (error, res, body) => {
       if (error || res.statusCode !== 200) {
         console.error("Error Getting Game", error || res.body)
         reject(error)
       } else {
-        var obj = JSON.parse(body)
-        var players = obj.filter(item => item._id === playerId || item._id === otherPlayerId)
-        if (players.length < 1) {
-          console.log('players.length < 1');
-          resolve({playerHealth: 100, otherPlayerHealth: 0})
-        } else {
-          var playerHealth = players.filter(item => item._id === playerId)[0]
-          var otherPlayerHealth = players.filter(item => item._id === otherPlayerId)[0]
-          console.log('player health: ' + playerHealth.health);
-          console.log('other player health: ' + otherPlayerHealth.health);
-
-          resolve({playerHealth: playerHealth.health, otherPlayerHealth: otherPlayerHealth.health})
-        }
+        var player = JSON.parse(body)
+        resolve(player.health)
       }
     })
   })
 }
+
+
+// let getHealth = () => {
+//   return new Promise((resolve, reject) => {
+//
+//     // we want to perform a GET request to the games/:id API
+//     // to retrieve information about the given game
+//     let options = createOptions(`players/active`, "GET")
+//
+//     request.get(options, (error, res, body) => {
+//       if (error || res.statusCode !== 200) {
+//         console.error("Error Getting Game", error || res.body)
+//         reject(error)
+//       } else {
+//         var obj = JSON.parse(body)
+//         var players = obj.filter(item => item._id === playerId || item._id === otherPlayerId)
+//         if (players.length < 1) {
+//           console.log('players.length < 1');
+//           resolve({playerHealth: 100, otherPlayerHealth: 0})
+//         } else {
+//           var playerHealth = players.filter(item => item._id === playerId)[0]
+//           var otherPlayerHealth = players.filter(item => item._id === otherPlayerId)[0]
+//           console.log('player health: ' + playerHealth.health);
+//           console.log('other player health: ' + otherPlayerHealth.health);
+//
+//           resolve({playerHealth: playerHealth.health, otherPlayerHealth: otherPlayerHealth.health})
+//         }
+//       }
+//     })
+//   })
+// }
 
 let createOptions = (endpoint, method, body) => {
   // we need to return all options that the request module expects
